@@ -12,7 +12,6 @@ def showImage(image):
     ax.imshow(image, cmap='gray')
     plt.show()
 
-'''
 faces = np.load("./facesAndAges/faces.npy")
 ages = np.load("./facesAndAges/ages.npy")
 
@@ -51,7 +50,6 @@ for i in range(len(x_test)):
         os.mkdir(path+str(y_test[i]))
     name = path + str(y_test[i]) + "/face"+str(i)+".jpg"
     im.save(name)
-'''
 
 train_dir = "./facesAndAges/images/train"
 validation_dir = "./facesAndAges/images/valid"
