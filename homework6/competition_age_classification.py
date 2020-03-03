@@ -11,7 +11,7 @@ def showImage(image):
     fig,ax = plt.subplots(1)
     ax.imshow(image, cmap='gray')
     plt.show()
-
+'''
 faces = np.load("./facesAndAges/faces.npy")
 ages = np.load("./facesAndAges/ages.npy")
 
@@ -51,6 +51,8 @@ for i in range(len(x_test)):
     name = path + str(y_test[i]) + "/face"+str(i)+".jpg"
     im.save(name)
 
+'''
+
 train_dir = "./facesAndAges/images/train"
 validation_dir = "./facesAndAges/images/valid"
 test_dir = "./facesAndAges/images/test"
@@ -68,8 +70,8 @@ validation_datagen = keras.preprocessing.image.ImageDataGenerator(rescale=1./255
 test_datagen = keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
 
 # Change the batchsize according to your system RAM
-train_batchsize = 20
-val_batchsize = 10
+train_batchsize = 64
+val_batchsize = 32
 
 train_generator = train_datagen.flow_from_directory(
         train_dir,
@@ -113,34 +115,6 @@ model.summary()
 EPOCHS = 100
 LEARNING_RATE = .001
 
-sd=[]
-class LossHistory(keras.callbacks.Callback):
-    def on_train_begin(self, logs={}):
-        self.losses = [1,1]
-
-    def on_epoch_end(self, batch, logs={}):
-        self.losses.append(logs.get('loss'))
-        sd.append(step_decay(len(self.losses)))
-        print('lr:', step_decay(len(self.losses)))
-
-def step_decay(losses):
-    if h.losses[-1] < 200:
-        lrate = 0.0
-        return lrate
-    elif h.losses[-1] < 500:
-        lrate=0.0000000001
-        return lrate
-    elif h.losses[-1] < 3000:
-        lrate=0.00001
-        return lrate
-    else:
-        lrate=0.0001
-        return lrate
-
-h = LossHistory()
-lrate = keras.callbacks.LearningRateScheduler(step_decay)
-
-
 sgd = keras.optimizers.SGD(lr=.0001)
 
 # Compile the model
@@ -150,41 +124,10 @@ model.compile(loss='mse',
 
 history = model.fit_generator(train_generator,
                     epochs=EPOCHS,
-                    steps_per_epoch=20, #train_generator.samples/train_generator.batch_size,
-                    callbacks=[h, lrate],
+                    steps_per_epoch=train_generator.samples/train_generator.batch_size, #20
+                    validation_data=validation_generator,
                     verbose=1)
 
 
 loss = model.evaluate_generator(test_generator, steps=100)
 print(loss)
-
-print(history)
-
-
-#model.load_weights('model.weights.best.hdf5')
-
-
-
-# plot model fit over each epoch
-acc = history.history['acc']
-val_acc = history.history['val_acc']
-loss = history.history['loss']
-val_loss = history.history['val_loss']
-
-epochs = range(len(acc))
-
-plt.plot(epochs, acc, 'b', label='Training acc')
-plt.plot(epochs, val_acc, 'r', label='Validation acc')
-plt.title('Training and validation accuracy')
-plt.legend()
-
-plt.figure()
-
-plt.plot(epochs, loss, 'b', label='Training loss')
-plt.plot(epochs, val_loss, 'r', label='Validation loss')
-plt.title('Training and validation loss')
-plt.legend()
-
-plt.show()
-
-
