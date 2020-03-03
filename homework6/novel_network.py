@@ -2,7 +2,6 @@ import os
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
-from keras_vggface.vggface import VGGFace
 import keras
 
 
@@ -56,7 +55,7 @@ for i in range(len(x_test)):
 train_dir = "./facesAndAges/images/train"
 validation_dir = "./facesAndAges/images/valid"
 test_dir = "./facesAndAges/images/test"
-image_size = 224
+image_size = 48
 
 train_datagen = keras.preprocessing.image.ImageDataGenerator(
       rescale=1./255,
@@ -93,40 +92,39 @@ test_generator = validation_datagen.flow_from_directory(
         class_mode='sparse',
         shuffle=False)
 
-
-vgg_model = VGGFace(model='senet50', include_top=False, input_shape=(image_size, image_size, 3), pooling='avg')
-
-for i in range(140):
-    vgg_model.layers.pop()
-
-
-for layer in vgg_model.layers[:-3]:
-    layer.trainable = False
-
 model = keras.Sequential()
-model.add(vgg_model)
+max_value = 100
 
 # Add new layers
+model.add(keras.layers.Conv2D(64, kernel_size=3, activation='relu', input_shape=(image_size,image_size,1)))
+model.add(keras.layers.BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001))
+model.add(keras.layers.MaxPooling2D(pool_size=(3, 3), strides=None, padding='valid', data_format=None))
+model.add(keras.layers.Conv2D(32, kernel_size=3, activation='relu'))
+model.add(keras.layers.BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001))
+model.add(keras.layers.MaxPooling2D(pool_size=(3, 3), strides=None, padding='valid', data_format=None))
+model.add(keras.layers.Conv2D(16, kernel_size=3, activation='relu'))
+model.add(keras.layers.BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001))
+model.add(keras.layers.MaxPooling2D(pool_size=(3, 3), strides=None, padding='valid', data_format=None))
 model.add(keras.layers.Dense(256))
-model.add(keras.layers.ReLU(max_value=100))
+model.add(keras.layers.ReLU(max_value=max_value))
 model.add(keras.layers.Dense(128))
-model.add(keras.layers.ReLU(max_value=100))
+model.add(keras.layers.ReLU(max_value=max_value))
 model.add(keras.layers.Dense(64))
-model.add(keras.layers.ReLU(max_value=100))
+model.add(keras.layers.ReLU(max_value=max_value))
 model.add(keras.layers.Dense(32))
-model.add(keras.layers.ReLU(max_value=100))
+model.add(keras.layers.ReLU(max_value=max_value))
 model.add(keras.layers.Dense(16))
-model.add(keras.layers.ReLU(max_value=100))
+model.add(keras.layers.ReLU(max_value=max_value))
 model.add(keras.layers.Dense(8))
-model.add(keras.layers.ReLU(max_value=100))
+model.add(keras.layers.ReLU(max_value=max_value))
 model.add(keras.layers.Dense(4))
-model.add(keras.layers.ReLU(max_value=100))
+model.add(keras.layers.ReLU(max_value=max_value))
 model.add(keras.layers.Dense(2))
-model.add(keras.layers.ReLU(max_value=100))
+model.add(keras.layers.ReLU(max_value=max_value))
 model.add(keras.layers.Dense(1))
 model.summary()
 
-EPOCHS = 100
+EPOCHS = 10
 LEARNING_RATE = .001
 
 sgd = keras.optimizers.SGD(lr=.0001)
