@@ -96,7 +96,7 @@ model = keras.Sequential()
 max_value = 100
 
 # Add new layers
-model.add(keras.layers.Conv2D(64, kernel_size=3, activation='relu', input_shape=(image_size, image_size, 1)))
+model.add(keras.layers.Conv2D(64, kernel_size=3, activation='relu', input_shape=(image_size, image_size, 3)))
 #model.add(keras.layers.BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001))
 model.add(keras.layers.MaxPooling2D())
 model.add(keras.layers.Conv2D(32, kernel_size=3, activation='relu'))
