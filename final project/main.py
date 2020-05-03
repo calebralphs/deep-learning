@@ -1,135 +1,262 @@
 """
-a sample d_covid19[0] has photo data d_covid19[0]['PA'], 14-length one hot vector label d_covid19['lab'],
-and integer index d_covid19['idx']
-A = posteroanterior,AP = anteroposterior, AP Supine = laying down
+How to Use:
+    COVID DATASET
+    1. Download Dataset: https://github.com/ieee8023/covid-chestxray-dataset
+    2. Make sure you have a folder called covid-chestxray-dataset
+    3. Move all images into folder called covid-chestxray-dataset/images
+    4. Put the metadata in covid-chestxray-dataset
 
+    NORMAL AND PNEUMONIA DATASET
+    1. Download Dataset:https://www.kaggle.com/paultimothymooney/chest-xray-pneumonia
+    2. Create two folders: normal, pneumonia
+    3. Copy all normal / pneumonia: test, validation, and train images into respective folders
 
-label guide:
-{0 'ARDS': {0.0: 187, 1.0: 14},
- 1 'Bacterial Pneumonia': {0.0: 184, 1.0: 17},
- 2 'COVID-19': {0.0: 46, 1.0: 155},
- 3 'Chlamydophila': {0.0: 200, 1.0: 1},
- 4 'Fungal Pneumonia': {0.0: 188, 1.0: 13},
- 5 'Klebsiella': {0.0: 200, 1.0: 1},
- 6 'Legionella': {0.0: 199, 1.0: 2},
- 7 'MERS': {0.0: 201},
- 8 'No Finding': {0.0: 200, 1.0: 1},
- 9 'Pneumocystis': {0.0: 188, 1.0: 13},
- 10 'Pneumonia': {0.0: 1, 1.0: 200},
- 11 'SARS': {0.0: 190, 1.0: 11},
- 12 'Streptococcus': {0.0: 188, 1.0: 13},
- 13 'Viral Pneumonia': {0.0: 35, 1.0: 166}}
 """
 
-
-
-
+from PIL import Image
 import torchxrayvision as xrv
 from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 import keras
+keras.backend.set_learning_phase(0)
+import os
+import glob
 
-def dict_to_np():
+import foolbox
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+import sklearn
+import sys
+
+# this takes forever, shink size so faster while developing
+#IMAGE_HEIGHT = 1400
+#IMAGE_WIDTH = 1260
+
+IMAGE_HEIGHT = 288
+IMAGE_WIDTH = 256
+
+NUM_IMAGES_NORMAL = 500
+NUM_IMAGES_PNEUMONIA = 500
+
+PERCENT_TRAINING = 80
+PERCENT_VALIDATION = 20  # percent of training set
+
+# takes an array of images scaled between 0 and 1
+def showMyImage(im):
+    im = Image.fromarray(im * 255)
+    im.show()
+
+def translate(value, leftMin, leftMax, rightMin, rightMax):
+    # Figure out how 'wide' each range is
+    leftSpan = leftMax - leftMin
+    rightSpan = rightMax - rightMin
+
+    # Convert the left range into a 0-1 range (float)
+    valueScaled = float(value - leftMin) / float(leftSpan)
+
+    # Convert the 0-1 range into a value in the right range.
+    return rightMin + (valueScaled * rightSpan)
+
+'''
+Generate numpy array from covid images
+Add labels for with key: [normal, covid19, pneumonia]
+'''
+def gen_covid_np():
     # Create data set:
     d_covid19 = xrv.datasets.COVID19_Dataset(views=["PA", "AP", "AP Supine"],
                                              imgpath="./covid-chestxray-dataset/images",
                                              csvpath="./covid-chestxray-dataset/metadata.csv")
+
+    # [0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 1.]
+
     X = []
     Y = []
     for i in tqdm(range(len(d_covid19))):
-        X.append(d_covid19[i]['PA'][0])
-        Y.append(d_covid19[i]['lab'])
-    np.save('labels', np.array(Y))
-    np.save('CT_scans', np.array(X))
+        if d_covid19[i]['lab'][2] == 1:
+            # retrieve image
+            im = d_covid19[i]['PA'][0]
+
+            # change scale from -1024:1024 to 0:255
+            im = ((im+1024) / 2048) * 255
+
+            # set to a constant image size
+            im = Image.fromarray(im)
+            im = im.resize((IMAGE_HEIGHT, IMAGE_WIDTH))
+
+            # add image and label to array
+            X.append(np.array(im))
+            if d_covid19[i]['lab'][-1] or d_covid19[i]['lab'][-4]:
+                Y.append([0, 1, 0]) # 0 1 1
+            else:
+                Y.append([0, 1, 0])
+
+    np.save('covid_labels', np.array(Y))
+    np.save('covid_scans', np.array(X))
 
 
 '''
-smallest image is 156 rows x 157 columns pixels
+Generate numpy array from normal images
+Add labels for with key: [normal, covid19, pneumonia]
 '''
-def dict_to_center_cropped_np():
-    new_width = 156
-    new_height = 156
-
-    # Create data set:
-    d_covid19 = xrv.datasets.COVID19_Dataset(views=["PA", "AP", "AP Supine"],
-                                             imgpath="./covid-chestxray-dataset/images",
-                                             csvpath="./covid-chestxray-dataset/metadata.csv")
+def gen_normal_np():
+    os.chdir("./normal")
+    images = glob.glob("*.jpeg")
     X = []
     Y = []
-    for i in tqdm(range(len(d_covid19))):
-        im = d_covid19[i]['PA'][0]
-        width = len(im[0])
-        height = len(im)
-
-        left = int((width - new_width) / 2)
-        top = int((height + new_height) / 2)
-        right = int((width + new_width) / 2)
-        bottom = int((height - new_height) / 2)
-
-        # Crop the center of the image
-        im = im[bottom:top, left:right]
-        X.append(im)
-        Y.append(d_covid19[i]['lab'])
-
-    np.save('center_cropped_labels', np.array(Y))
-    np.save('center_cropped_CT_scans', np.array(X))
+    for image in images:
+        if len(X) < NUM_IMAGES_NORMAL:
+            im = Image.open(image).convert('L')
+            im = im.resize((IMAGE_HEIGHT, IMAGE_WIDTH))
+            X.append(np.array(im))
+            Y.append([1, 0, 0])
+    os.chdir("../")
+    np.save('normal_scans', np.array(X))
+    np.save('normal_labels', np.array(Y))
 
 
+'''
+Generate numpy array from pneumonia images
+Add labels for with key: [normal, covid19, pneumonia]
+'''
+def gen_pneumonia_np():
+    os.chdir("./pneumonia")
+    images = glob.glob("*.jpeg")
+    X = []
+    Y = []
+    for image in images:
+        if len(X) < NUM_IMAGES_PNEUMONIA:
+            if "virus" in image:
+                im = Image.open(image).convert('L')
+                im = im.resize((IMAGE_HEIGHT, IMAGE_WIDTH))
+                X.append(np.array(im))
+                Y.append([0, 0, 1])
+    os.chdir("../")
+    np.save('pneumonia_scans', np.array(X))
+    np.save('pneumonia_labels', np.array(Y))
 
 
-label_guide = ['ARDS','Bacterial Pneumonia','COVID-19','Chlamydophila', 'Fungal Pneumonia', 'Klebsiella', 'Legionella',
-               'MERS', 'No Finding', 'Pneumocystis', 'Pneumonia', 'SARS', 'Streptococcus', 'Viral Pneumonia']
-# Load data set:
-X = np.load('center_cropped_CT_scans.npy', allow_pickle=True)
-# 14-length multi-class one hot. Example: [0,0,1,0,1,0,0,0,1,0,0,0,0,0]. Multiple outcomes can be true for one sample
-Y = np.load('center_cropped_labels.npy', allow_pickle=True)
+'''
+Smooths labels as benchmark for distillation
+'''
+def smooth_labels(labels, factor=0.15):
+    # smooth the labels
+    labels = labels*(1 - factor)
+    labels += (factor / labels.shape[1])
+    # returned the smoothed labels
+    return labels
 
-# DATA PRE-PROCESSING
-# data is somewhat grouped by label so we must shuffle them. X and Y must be shuffled with same seed!
-np.random.seed(42)
+# generate the np arrays
+# gen_covid_np()
+# gen_normal_np()
+# gen_pneumonia_np()
+
+# load arrays and generate image and label arrays
+X_normal = np.expand_dims(np.load('normal_scans.npy', allow_pickle=True), axis=3)
+Y_normal = np.load('normal_labels.npy', allow_pickle=True)
+X_covid = np.expand_dims(np.load('covid_scans.npy', allow_pickle=True), axis=3)
+Y_covid = np.load('covid_labels.npy', allow_pickle=True)
+X_pneumonia = np.expand_dims(np.load('pneumonia_scans.npy', allow_pickle=True), axis=3)
+Y_pneumonia = np.load('pneumonia_labels.npy', allow_pickle=True)
+
+X = np.vstack((X_normal, X_pneumonia))
+y = np.vstack((Y_normal, Y_pneumonia))
+X = np.vstack((X, X_covid))
+y = np.vstack((y, Y_covid))
+
+print("Normal Images: ", np.shape(X_normal)[0])
+print("Covid Images: ", np.shape(X_covid)[0])
+print("Pneumonia Images: ", np.shape(X_pneumonia)[0], '\n')
+
+
+'''
+Add some data augmentation here!
+1. Flipping
+2. Gaussian Noise
+'''
+
+# 'normal', 'distill', 'smoothed'
+label_format = 'normal'
+label_guide = ['Normal', 'Covid-19', 'Pneumonia']
+
+seed = np.random.randint(0, 10000)
+np.random.seed(seed)
 np.random.shuffle(X)
-np.random.seed(42)
-np.random.shuffle(Y)
+np.random.seed(seed)
+np.random.shuffle(y)
 
-# len(X) = 242. 8:1:1 split
-X_tr = np.expand_dims(X[0:194].astype('float32') / 255, axis=-1)  # 194
-X_val = np.expand_dims(X[194:218].astype('float32') / 255, axis=-1)  # 24
-X_t = np.expand_dims(X[218:].astype('float32') / 255, axis=-1)  # 24
-y_tr = Y[0:194]  # 194
-y_val = Y[194:218]  # 24
-y_t = Y[218:]  # 24
+total_images = np.shape(X)[0]
+num_training = int(total_images * PERCENT_TRAINING / 100)
+num_validation = int(num_training * PERCENT_VALIDATION / 100)
 
+
+if label_format=='distill':
+    X_tr = np.load('X_tr.npy')
+    X_val = np.load('X_val.npy')
+    X_te = np.load('X_te.npy')
+    y_tr = np.load('y_tr.npy')
+    y_val = np.load('y_val.npy')
+    y_te = np.load('y_te.npy')
+else:
+    X_tr = X[0:num_training] / 255
+    X_val, X_tr = X_tr[0:num_validation], X_tr[num_validation:]
+    X_te = X[num_training:] / 255
+
+    y_tr = y[0:num_training]
+    y_val, y_tr = y_tr[0:num_validation], y_tr[num_validation:]
+    y_te = y[num_training:]
+
+if label_format=='smoothed':
+    y_tr = smooth_labels(y_tr)
+
+print('test shape: ',X_te.shape)
+print(np.min(X_te))
+print(np.max(X_te))
+
+print("Training Images: ", np.shape(X_tr)[0])
+print("Validation Images: ", np.shape(X_val)[0])
+print("Testing Images: ", np.shape(X_te)[0], '\n')
 
 # DEFINE MODEL
-height = len(X_tr[0])
-width = len(X_tr[0,0])
+def create_model():
+    model = keras.Sequential()  # Must define the input shape in the first layer of the neural network
+    model.add(
+        keras.layers.Conv2D(filters=64, kernel_size=2, padding='same', activation='relu', input_shape=(IMAGE_WIDTH, IMAGE_HEIGHT, 1)))
+    model.add(keras.layers.MaxPooling2D(pool_size=2))
+    # model.add(keras.layers.Dropout(0.3))
+    model.add(keras.layers.Conv2D(filters=32, kernel_size=2, padding='same', activation='relu'))
+    model.add(keras.layers.MaxPooling2D(pool_size=2))
+    # model.add(keras.layers.Dropout(0.3))
+    model.add(keras.layers.Conv2D(filters=16, kernel_size=2, padding='same', activation='relu'))
+    model.add(keras.layers.MaxPooling2D(pool_size=2))
+    model.add(keras.layers.Conv2D(filters=8, kernel_size=2, padding='same', activation='relu'))
+    model.add(keras.layers.MaxPooling2D(pool_size=2))
+    model.add(keras.layers.Flatten())
+    model.add(keras.layers.Dense(256, activation='relu'))
+    # model.add(tf.keras.layers.Dropout(0.5))
+    # temperature added
+    if label_format=='normal':
+        T = 10.
+        model.add(keras.layers.Lambda(lambda x: x / T))
+    model.add(keras.layers.Dense(3, activation='softmax'))
+    return model
 
-model = keras.Sequential()  # Must define the input shape in the first layer of the neural network
-model.add(
-    keras.layers.Conv2D(filters=64, kernel_size=2, padding='same', activation='relu', input_shape=(height, width, 1)))
-model.add(keras.layers.MaxPooling2D(pool_size=2))
-model.add(keras.layers.Dropout(0.3))
-model.add(keras.layers.Conv2D(filters=32, kernel_size=2, padding='same', activation='relu'))
-model.add(keras.layers.MaxPooling2D(pool_size=2))
-model.add(keras.layers.Dropout(0.3))
-model.add(keras.layers.Conv2D(filters=16, kernel_size=2, padding='same', activation='relu'))
-model.add(keras.layers.MaxPooling2D(pool_size=2))
-model.add(keras.layers.Conv2D(filters=8, kernel_size=2, padding='same', activation='relu'))
-model.add(keras.layers.MaxPooling2D(pool_size=2))
-model.add(keras.layers.Flatten())
-model.add(keras.layers.Dense(256, activation='relu'))
-# model.add(tf.keras.layers.Dropout(0.5))
-model.add(keras.layers.Dense(14, activation='sigmoid'))
-
-model.compile(loss='binary_crossentropy',
-              optimizer='sgd',
-              metrics=['accuracy'])
+model = create_model()
+if label_format == 'normal':
+    model.compile(loss='categorical_crossentropy',
+                  optimizer='sgd',
+                  metrics=['accuracy'])
+else:
+    model.compile(loss='categorical_crossentropy',
+                  optimizer='sgd',
+                  metrics=['accuracy'])
 model.summary()
 
 
 # TRAIN
-history = model.fit(X_tr, y_tr, validation_data=(X_val, y_val), batch_size=1, epochs=10)
+print('TRAINING WITH LABEL FORMAT = ', label_format)
+print('Examples: ', str(y_tr[0:10]))
+history = model.fit(X_tr, y_tr, validation_data=(X_val, y_val), batch_size=20, epochs=100)
 plt.plot(history.history['loss'])
 plt.plot(history.history['val_loss'])
 plt.ylabel('Loss')
@@ -140,21 +267,45 @@ plt.show()
 
 
 # TEST
-score = model.evaluate(X_t, y_t, verbose=0)  # Print test accuracy
+score = model.evaluate(X_te, y_te, verbose=0)  # Print test accuracy
 print('\n', 'Test accuracy:', score[1])
 
 # plot some examples and their predictions
 examples = 5
 for i in range(examples):
-    im = X_t[i,:,:,0]
-    label = y_t[i]
+    im = X_te[i,:,:,0]
+    label = y_te[i]
     plt.imshow(im)
-    prediction = np.round(model.predict(np.expand_dims(X_t[i], axis=0), batch_size=1))[0]
+    prediction = model.predict(np.expand_dims(X_te[i], axis=0), batch_size=1)[0]
     plt.title('Ground Truth: ' + str(label) +
               '\n' + str(np.take(label_guide, np.nonzero(label)[0] ))+
               '\nPrediction: ' + str(prediction) +
-              '\n' + str(np.take(label_guide, np.nonzero(prediction)[0] )) )
+              '\n' + str(np.take(label_guide, np.argmax(prediction) )) )
     plt.tight_layout()
     plt.show()
+
+#
+# # preprocessing = dict(flip_axis=-1)  # RGB to BGR and mean subtraction
+# fmodel = foolbox.models.KerasModel(model, bounds=(0, 1.), channel_axis=1)
+# attack = foolbox.v1.attacks.FGSM(fmodel)
+# adversarial = X_te
+# for i in range(len(X_te)):
+#     print(X_te[i].shape)
+#     print(y_te[i].shape)
+#     print(fmodel.predict(X_te[i]))
+#     adversarial[i] = attack(X_te[i], y_te[i])
+# score = model.evaluate(adversarial, y_te, verbose=0)  # Print test accuracy
+# print('\n', 'Attacked Test accuracy:', score[1])
+
+
+if label_format == 'normal':
+    # Save predictions for distillation-based training
+    y_pred = model.predict(X_tr)
+    np.save('y_tr',y_pred)
+    np.save('X_tr',X_tr)
+    np.save('y_val',y_val)
+    np.save('X_val',X_val)
+    np.save('y_te',y_te)
+    np.save('X_te',X_te)
 
 
