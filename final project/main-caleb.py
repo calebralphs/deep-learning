@@ -213,18 +213,31 @@ def create_model_sequential():
     return model
 
 def create_model_api():
-    from keras.layers import Input, Conv2D, MaxPooling2D, Dropout, Flatten, Dense
+    from keras.layers import Input, Conv2D, MaxPooling2D, Dropout, Flatten, Dense, Concatenate, Activation, BatchNormalization
     from keras.models import Model
+
+    def res_block(input_layer, filters, depth=1):
+        shortcut = input_layer
+        output_layer=input_layer
+        for i in range(depth):
+            output_layer = Conv2D(filters=filters, kernel_size=2, padding='same')(output_layer)
+            output_layer = BatchNormalization(axis=3)(output_layer)
+            if i+1 < depth: # wait to do the last relu activation until after concatenation
+                output_layer = Activation('relu')(output_layer)
+        output_layer = Concatenate(axis=-1)([output_layer, shortcut])
+        output_layer = Activation('relu')(output_layer)
+        return output_layer
+
     inputs = Input(shape=(IMAGE_WIDTH, IMAGE_HEIGHT, 1))
     conv1 = Conv2D(filters=64, kernel_size=2, padding='same', activation='relu')(inputs)
     maxpool1 = MaxPooling2D(pool_size=2)(conv1)
-    dropout1 = Dropout(0.3)(maxpool1)
-    conv2 = Conv2D(filters=32, kernel_size=2, padding='same', activation='relu')(dropout1)
+    dropout1 = Dropout(0.3)(maxpool1) # to skip until after next conv layer
+    conv2 = res_block(dropout1, 32, 1)
     maxpool2 = MaxPooling2D(pool_size=2)(conv2)
     dropout2 = Dropout(0.3)(maxpool2)
-    conv3 = Conv2D(filters=16, kernel_size=2, padding='same', activation='relu')(dropout2)
+    conv3 = res_block(dropout2, 32, 1)
     maxpool3 = MaxPooling2D(pool_size=2)(conv3)
-    conv4 = Conv2D(filters=8, kernel_size=2, padding='same', activation='relu')(maxpool3)
+    conv4 = res_block(maxpool3, 32, 1)
     maxpool4 = MaxPooling2D(pool_size=2)(conv4)
     flatten = Flatten()(maxpool4)
     dense1 = Dense(256, activation='relu')(flatten)
@@ -234,6 +247,8 @@ def create_model_api():
 
 
 model = create_model_api()
+for layer in model.layers:
+    print(layer, layer.output_shape)
 model.compile(loss='binary_crossentropy',
               optimizer='sgd',
               metrics=['accuracy'])
