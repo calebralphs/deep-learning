@@ -30,6 +30,40 @@ def create_model(LABEL_FORMAT, IMAGE_WIDTH, IMAGE_HEIGHT, TEMPERATURE):
     return model
 
 
+def create_model_api(IMAGE_WIDTH, IMAGE_HEIGHT):
+    from keras.layers import Input, Conv2D, MaxPooling2D, Dropout, Flatten, Dense, Concatenate, Activation, BatchNormalization
+    from keras.models import Model
+
+    def res_block(input_layer, filters, depth=1):
+        shortcut = input_layer
+        output_layer=input_layer
+        for i in range(depth):
+            output_layer = Conv2D(filters=filters, kernel_size=2, padding='same')(output_layer)
+            output_layer = BatchNormalization(axis=3)(output_layer)
+            if i+1 < depth: # wait to do the last relu activation until after concatenation
+                output_layer = Activation('relu')(output_layer)
+        output_layer = Concatenate(axis=-1)([output_layer, shortcut])
+        output_layer = Activation('relu')(output_layer)
+        return output_layer
+
+    inputs = Input(shape=(IMAGE_WIDTH, IMAGE_HEIGHT, 1))
+    conv1 = Conv2D(filters=64, kernel_size=2, padding='same', activation='relu')(inputs)
+    maxpool1 = MaxPooling2D(pool_size=2)(conv1)
+    dropout1 = Dropout(0.3)(maxpool1) # to skip until after next conv layer
+    conv2 = res_block(dropout1, 32, 1)
+    maxpool2 = MaxPooling2D(pool_size=2)(conv2)
+    dropout2 = Dropout(0.3)(maxpool2)
+    conv3 = res_block(dropout2, 16, 1)
+    maxpool3 = MaxPooling2D(pool_size=2)(conv3)
+    conv4 = res_block(maxpool3, 8, 1)
+    maxpool4 = MaxPooling2D(pool_size=2)(conv4)
+    flatten = Flatten()(maxpool4)
+    dense1 = Dense(256, activation='relu')(flatten)
+    outputs = Dense(3, activation='softmax')(dense1)
+    model = Model(inputs=inputs, outputs=outputs)
+    return model
+
+
 def save_weights(model, LABEL_FORMAT, X_tr, X_val):
     # store y values for test and train to distill
     if LABEL_FORMAT == 'normal':  # create the distilled versions for new normal predictions

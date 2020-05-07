@@ -38,7 +38,7 @@ LABEL_GUIDE = ['normal', 'covid-pneumonia', 'pneumonia']
 ####################################################################
 # DEFINE TRAINING VARIABLES
 
-LOAD_WEIGHTS = True
+LOAD_WEIGHTS = False
 SAVE_BEST = True
 
 # 'normal', 'distill', 'smooth'
@@ -69,7 +69,8 @@ X_tr, y_tr, X_val, y_val, X_te, y_te = generate_train_val_test_sets(LABEL_FORMAT
 ####################################################################
 # CREATE AND TEST MODEL
 
-model = create_model(LABEL_FORMAT, IMAGE_WIDTH, IMAGE_HEIGHT, TEMPERATURE)
+#model = create_model(LABEL_FORMAT, IMAGE_WIDTH, IMAGE_HEIGHT, TEMPERATURE)
+model = create_model_api(IMAGE_WIDTH, IMAGE_HEIGHT)
 model.compile(loss='categorical_crossentropy', #binary_crossentropy
               optimizer='adam',
               metrics=['accuracy'])
