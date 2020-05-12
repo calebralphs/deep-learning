@@ -22,6 +22,8 @@ import keras
 keras.backend.set_learning_phase(0)
 import os
 import glob
+import matt_graph_generation
+from matt_keras_model import CustomCallback
 
 import foolbox
 import matplotlib.pyplot as plt
@@ -139,7 +141,7 @@ def gen_pneumonia_np():
 '''
 Smooths labels as benchmark for distillation
 '''
-def smooth_labels(labels, factor=0.15):
+def smooth_labels(labels, factor=0.1):
     # smooth the labels
     labels = labels*(1 - factor)
     labels += (factor / labels.shape[1])
@@ -177,7 +179,8 @@ Add some data augmentation here!
 
 # 'normal', 'distill', 'smoothed'
 label_format = 'normal'
-label_guide = ['Normal', 'Covid-19', 'Pneumonia']
+
+label_guide = ['normal', 'covid-pneumonia', 'pneumonia']
 
 seed = np.random.randint(0, 10000)
 np.random.seed(seed)
@@ -223,45 +226,39 @@ def create_model():
     model.add(
         keras.layers.Conv2D(filters=64, kernel_size=2, padding='same', activation='relu', input_shape=(IMAGE_WIDTH, IMAGE_HEIGHT, 1)))
     model.add(keras.layers.MaxPooling2D(pool_size=2))
-    # model.add(keras.layers.Dropout(0.3))
+    model.add(keras.layers.Dropout(0.3))
     model.add(keras.layers.Conv2D(filters=32, kernel_size=2, padding='same', activation='relu'))
     model.add(keras.layers.MaxPooling2D(pool_size=2))
-    # model.add(keras.layers.Dropout(0.3))
+    model.add(keras.layers.Dropout(0.3))
     model.add(keras.layers.Conv2D(filters=16, kernel_size=2, padding='same', activation='relu'))
     model.add(keras.layers.MaxPooling2D(pool_size=2))
     model.add(keras.layers.Conv2D(filters=8, kernel_size=2, padding='same', activation='relu'))
     model.add(keras.layers.MaxPooling2D(pool_size=2))
     model.add(keras.layers.Flatten())
     model.add(keras.layers.Dense(256, activation='relu'))
-    # model.add(tf.keras.layers.Dropout(0.5))
     # temperature added
-    if label_format=='normal':
-        T = 10.
-        model.add(keras.layers.Lambda(lambda x: x / T))
+    T = 10.
+    model.add(keras.layers.Lambda(lambda x: x / T))
     model.add(keras.layers.Dense(3, activation='softmax'))
     return model
 
 model = create_model()
-if label_format == 'normal':
-    model.compile(loss='categorical_crossentropy',
-                  optimizer='sgd',
-                  metrics=['accuracy'])
-else:
-    model.compile(loss='categorical_crossentropy',
-                  optimizer='sgd',
-                  metrics=['accuracy'])
+model.compile(loss='categorical_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
 model.summary()
 
 
 # TRAIN
 print('TRAINING WITH LABEL FORMAT = ', label_format)
 print('Examples: ', str(y_tr[0:10]))
-history = model.fit(X_tr, y_tr, validation_data=(X_val, y_val), batch_size=20, epochs=100)
-plt.plot(history.history['loss'])
-plt.plot(history.history['val_loss'])
-plt.ylabel('Loss')
-plt.xlabel('Epoch')
-plt.legend(['Training Loss', 'Validation Loss'], loc='upper left')
+history = model.fit(X_tr, y_tr, validation_data=(X_val, y_val), batch_size=20, epochs=20)
+
+plt.plot(history.history['acc'])
+plt.plot(history.history['val_acc'])
+plt.ylabel('Accuracy')
+plt.xlabel('Number of Epochs')
+plt.legend(['train acc', 'val acc'], loc='upper left')
 plt.grid(True)
 plt.show()
 
@@ -284,19 +281,6 @@ for i in range(examples):
     plt.tight_layout()
     plt.show()
 
-#
-# # preprocessing = dict(flip_axis=-1)  # RGB to BGR and mean subtraction
-# fmodel = foolbox.models.KerasModel(model, bounds=(0, 1.), channel_axis=1)
-# attack = foolbox.v1.attacks.FGSM(fmodel)
-# adversarial = X_te
-# for i in range(len(X_te)):
-#     print(X_te[i].shape)
-#     print(y_te[i].shape)
-#     print(fmodel.predict(X_te[i]))
-#     adversarial[i] = attack(X_te[i], y_te[i])
-# score = model.evaluate(adversarial, y_te, verbose=0)  # Print test accuracy
-# print('\n', 'Attacked Test accuracy:', score[1])
-
 
 if label_format == 'normal':
     # Save predictions for distillation-based training
@@ -308,4 +292,13 @@ if label_format == 'normal':
     np.save('y_te',y_te)
     np.save('X_te',X_te)
 
+# matt_graph_generation.plot_distribution_of_predictions(model, label_guide, X_te, y_te)
 
+fmodel = foolbox.models.KerasModel(model, bounds=(0, 1.), channel_axis=1)
+attack = foolbox.v1.attacks.BoundaryAttack(fmodel)
+adversarial = X_te[0:10]
+for i in range(len(adversarial)):
+    print('sample: ',i)
+    adversarial[i] = attack(X_te[i], np.argwhere(y_te[i]==1)[0][0])
+score = model.evaluate(adversarial, y_te[0:10], verbose=0)  # Print test accuracy
+print('\n', 'Attacked Test accuracy:', score[1])
